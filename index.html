@@ -3,10 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#e9ebe4">
+  <meta name="theme-color" content="#f5f6f8">
   <meta name="color-scheme" content="light">
   <meta name="application-name" content="词页">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="词页">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon-192.png" sizes="192x192" type="image/png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <title>词页 · 英语二高频词</title>
   <style>
     :root {
@@ -387,6 +393,7 @@
             <div class="settings-section">
               <h2>设置</h2>
               <div class="settings-list">
+                <div class="setting-row"><div class="setting-copy"><strong>安装到主屏幕</strong><span id="installHint">像 App 一样全屏打开</span></div><button class="mini-action" type="button" id="installApp">安装</button></div>
                 <div class="setting-row"><div class="setting-copy"><strong>自动发音</strong><span>翻到新词时朗读一次英文</span></div><label class="switch"><input id="autoSpeak" type="checkbox"><span aria-hidden="true"></span><span class="sr-only">自动发音</span></label></div>
                 <div class="setting-row"><div class="setting-copy"><strong>清空学习进度</strong><span>收藏和连续天数也会一起清除</span></div><button class="mini-action" type="button" id="resetProgress">清空</button></div>
               </div>
@@ -483,6 +490,7 @@
       let quizCount = 10;
       let dialogKey = null;
       let toastTimer = null;
+      let deferredInstallPrompt = null;
       const libraryState = { query:'', filter:'all', day:0, limit:80 };
 
       function saveState(){ try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (error) {} }
@@ -578,6 +586,34 @@
       function showToast(message){
         const el=$('#toast'); el.textContent=message; el.classList.add('is-visible'); clearTimeout(toastTimer);
         toastTimer=setTimeout(()=>el.classList.remove('is-visible'),1900);
+      }
+      function isStandaloneApp(){
+        return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+      }
+      function updateInstallUI(){
+        const button=$('#installApp'), hint=$('#installHint'); if(!button||!hint) return;
+        if(isStandaloneApp()){ button.textContent='已安装'; button.disabled=true; hint.textContent='当前已作为独立应用运行'; return; }
+        button.disabled=false;
+        if(deferredInstallPrompt){ button.textContent='安装'; hint.textContent='像 App 一样全屏打开'; }
+        else { button.textContent='查看方法'; hint.textContent='从浏览器菜单添加到主屏幕'; }
+      }
+      async function installApp(){
+        if(deferredInstallPrompt){
+          deferredInstallPrompt.prompt();
+          const choice=await deferredInstallPrompt.userChoice;
+          deferredInstallPrompt=null;
+          if(choice.outcome==='accepted') showToast('正在安装词页');
+          updateInstallUI();
+          return;
+        }
+        const ios=/iphone|ipad|ipod/i.test(navigator.userAgent);
+        showToast(ios?'请点 Safari 的分享按钮，再选“添加到主屏幕”。':'请打开浏览器菜单，选择“安装应用”或“添加到主屏幕”。');
+      }
+      window.addEventListener('beforeinstallprompt',event=>{ event.preventDefault(); deferredInstallPrompt=event; updateInstallUI(); });
+      window.addEventListener('appinstalled',()=>{ deferredInstallPrompt=null; updateInstallUI(); showToast('词页已安装'); });
+      function registerServiceWorker(){
+        if(!('serviceWorker' in navigator)) return;
+        window.addEventListener('load',()=>{ navigator.serviceWorker.register('./sw.js').catch(()=>{}); });
       }
 
       function startDaySession(random=false){
@@ -847,6 +883,7 @@
         $('#studyBack').addEventListener('click',closeStudy);
         $('#dialogClose').addEventListener('click',closeDialog);
         $('#wordDialog').addEventListener('click',event=>{ if(event.target===$('#wordDialog')) closeDialog(); });
+        $('#installApp').addEventListener('click',installApp);
         $('#autoSpeak').addEventListener('change',event=>{ state.autoSpeak=event.target.checked; saveState(); showToast(state.autoSpeak?'已开启自动发音':'已关闭自动发音'); });
         $('#resetProgress').addEventListener('click',()=>{
           if(!window.confirm('确定清空全部学习进度、收藏和连续天数吗？')) return;
@@ -869,7 +906,7 @@
         initStudyGestures();
       }
       function init(){
-        renderTop(); renderHome(); renderProfile(); renderQuizConfig(); renderLibrary(); bindEvents();
+        renderTop(); renderHome(); renderProfile(); renderQuizConfig(); renderLibrary(); bindEvents(); updateInstallUI(); registerServiceWorker();
       }
       init();
     })();
